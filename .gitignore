@@ -1,0 +1,15 @@
+# Dataset
+data/
+
+# Model checkpoints
+checkpoints/
+weights/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Colab
+*.ipynb_checkpoints/
+.ipynb_checkpoints/
