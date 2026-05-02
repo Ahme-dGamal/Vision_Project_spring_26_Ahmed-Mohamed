@@ -63,9 +63,9 @@ def get_args():
     p.add_argument("--resume",      type=Path, default=None,
                    help="Resume a previous fine-tuning run from a checkpoint_N.pth")
 
-    # Model
-    p.add_argument("--model", default="SHViT_S4",
-                   choices=["SHViT_S1", "SHViT_S2", "SHViT_S3", "SHViT_S4"])
+    # Model — names are lowercase as registered by model/build.py @register_model
+    p.add_argument("--model", default="shvit_s4",
+                   choices=["shvit_s1", "shvit_s2", "shvit_s3", "shvit_s4"])
     p.add_argument("--input-size", default=224, type=int)
 
     # Training
@@ -154,7 +154,9 @@ def load_pretrained(model: torch.nn.Module, ckpt_path: Path) -> None:
     Load ImageNet weights, dropping head keys whose shape mismatches.
     Mirrors the --finetune branch in SHViT's main.py exactly.
     """
-    ckpt = torch.load(ckpt_path, map_location="cpu")
+    # weights_only=False: PyTorch 2.6+ default change; SHViT checkpoints carry
+    # the original argparse Namespace which is a pickled (non-tensor) object.
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict = ckpt.get("model", ckpt)
 
     # SHViT classifier: head.l.{weight,bias}  (distillation variant: head_dist.l.*)
@@ -263,13 +265,16 @@ def evaluate_epoch(model, loader, device):
 def main():
     args = get_args()
 
-    # Register SHViT model family with timm
+    # Register SHViT model family with timm.
+    # SHViT's package is `model` (singular); its __init__.py does
+    # `from .build import *`, which triggers the @register_model decorators.
+    # Aliased to _shvit_pkg so it doesn't shadow our local `model` variable below.
     sys.path.insert(0, str(args.shvit_dir.resolve()))
     try:
-        import models  # noqa: F401 — side-effect: registers SHViT_* with timm
+        import model as _shvit_pkg  # noqa: F401 — side-effect: registers shvit_s1..s4
     except ImportError as exc:
         raise SystemExit(
-            f"Cannot import SHViT models from {args.shvit_dir}.\n"
+            f"Cannot import SHViT `model` package from {args.shvit_dir}.\n"
             f"Make sure --shvit-dir points to the cloned SHViT repo.\n{exc}"
         )
 
@@ -320,7 +325,7 @@ def main():
     start_epoch = 0
     best_top1   = 0.0
     if args.resume and args.resume.exists():
-        ckpt = torch.load(args.resume, map_location="cpu")
+        ckpt = torch.load(args.resume, map_location="cpu", weights_only=False)
         model.load_state_dict(ckpt["model"])
         optimizer.load_state_dict(ckpt["optimizer"])
         start_epoch = ckpt["epoch"] + 1

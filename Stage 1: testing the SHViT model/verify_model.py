@@ -70,18 +70,18 @@ def main() -> None:
     # ------------------------------------------------------------------ #
     sys.path.insert(0, str(args.shvit_dir.resolve()))
     try:
-        from models import SHViT  # noqa: F401 — registers the model
+        import model as _shvit_pkg  # noqa: F401 — registers shvit_s* with timm
         import timm
     except ImportError as exc:
-        sys.exit(f"[ERROR] Cannot import SHViT models: {exc}\n"
+        sys.exit(f"[ERROR] Cannot import SHViT `model` package: {exc}\n"
                  f"Make sure --shvit-dir points to the cloned repo "
                  f"and requirements are installed.")
 
     # ------------------------------------------------------------------ #
     # 2. Build model
     # ------------------------------------------------------------------ #
-    print(f"Building SHViT-S4 ...")
-    model = timm.create_model("SHViT_S4", pretrained=False, num_classes=1000)
+    print(f"Building shvit_s4 ...")
+    net = timm.create_model("shvit_s4", pretrained=False, num_classes=1000)
 
     # ------------------------------------------------------------------ #
     # 3. Load checkpoint
@@ -93,19 +93,21 @@ def main() -> None:
                  f"-O {args.checkpoint}")
 
     print(f"Loading weights from {args.checkpoint} ...")
-    ckpt = torch.load(args.checkpoint, map_location="cpu")
+    # weights_only=False: needed for PyTorch 2.6+ default change; SHViT checkpoints
+    # contain the args namespace which is a pickled object, not just tensors.
+    ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
 
     # Checkpoint may be wrapped under a 'model' key
     state_dict = ckpt.get("model", ckpt)
-    missing, unexpected = model.load_state_dict(state_dict, strict=False)
+    missing, unexpected = net.load_state_dict(state_dict, strict=False)
     if missing:
         print(f"  [WARN] Missing keys ({len(missing)}): {missing[:5]} ...")
     if unexpected:
         print(f"  [WARN] Unexpected keys ({len(unexpected)}): {unexpected[:5]} ...")
     print("  Weights loaded successfully.")
 
-    model.to(args.device)
-    model.eval()
+    net.to(args.device)
+    net.eval()
 
     # ------------------------------------------------------------------ #
     # 4. Collect images
@@ -128,7 +130,7 @@ def main() -> None:
         for img_path, true_class in items:
             img = Image.open(img_path).convert("RGB")
             x = transform(img).unsqueeze(0).to(args.device)
-            logits = model(x)
+            logits = net(x)
             pred_idx = int(logits.argmax(dim=1).item())
             results.append((img_path.name, true_class, pred_idx))
 
